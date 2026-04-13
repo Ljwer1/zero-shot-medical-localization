@@ -162,10 +162,10 @@ Localization `pAUC` results on the three target datasets:
 
 | Target | layer12 only | layer24 only | 12+24 equal fusion | 12+24 learned fusion |
 | --- | ---: | ---: | ---: | ---: |
-| Brain | 0.9342 | 0.9229 | 0.9378 | 0.9378 |
-| Liver | 0.9743 | 0.9773 | 0.9882 | 0.9882 |
-| Retina_RESC | 0.8769 | 0.8349 | 0.8938 | 0.8935 |
-| Average | 0.9285 | 0.9117 | 0.9399 | 0.9398 |
+| Brain | 0.9342 | 0.9229 | **0.9378** | **0.9378** |
+| Liver | 0.9743 | 0.9773 | **0.9882** | **0.9882** |
+| Retina_RESC | 0.8769 | 0.8349 | **0.8938** | 0.8935 |
+| Average | 0.9285 | 0.9117 | **0.9399** | 0.9398 |
 
 These numbers summarize the localization-only ablation over different CLIP feature fusion settings, with `12+24 equal fusion` giving the best average `pAUC`.
 
@@ -173,17 +173,20 @@ These numbers summarize the localization-only ablation over different CLIP featu
 
 Representative localization results for each target dataset:
 
-### Brain
+<table>
+  <tr>
+    <td align="center"><b>Brain MRI</b></td>
+    <td align="center"><b>Liver CT</b></td>
+    <td align="center"><b>Retina RESC</b></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="images/brain_localization_visualize.png" width="100%"></td>
+    <td align="center"><img src="images/liver_localization_visualize.png" width="100%"></td>
+    <td align="center"><img src="images/retina_resc_localization_visualize.png" width="100%"></td>
+  </tr>
+</table>
 
-![Brain localization visualization](images/brain_localization_visualize.png)
-
-### Liver
-
-![Liver localization visualization](images/liver_localization_visualize.png)
-
-### Retina RESC
-
-![Retina RESC localization visualization](images/retina_resc_localization_visualize.png)
+Each panel shows the original image, heatmap, thresholded prediction mask, and ground-truth anomaly mask for representative abnormal samples.
 
 ## Generate Visualizations
 
@@ -218,3 +221,20 @@ The visualization script renders four rows per sample:
 - This code path no longer includes the original image-level anomaly detection branch.
 - The active metric is pixel-level localization `pAUC`.
 - The adapter configuration is fixed to `spatial_text_guided` with layers `[12, 24]`.
+
+## Citation
+
+If the upstream MVFA-AD method is helpful for your work, please cite the original paper:
+
+```bibtex
+@inproceedings{huang2024adapting,
+  title={Adapting Visual-Language Models for Generalizable Anomaly Detection in Medical Images},
+  author={Huang, Chaoqin and Jiang, Aofan and Feng, Jinghao and Zhang, Ya and Wang, Xinchao and Wang, Yanfeng},
+  booktitle={IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
+  year={2024}
+}
+```
+
+## Acknowledgement
+
+This repository is derived from `MediaBrain-SJTU/MVFA-AD` and also includes CLIP-related code adapted from OpenAI. Please keep the upstream license and attribution notices when redistributing derivative versions.
