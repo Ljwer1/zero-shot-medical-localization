@@ -156,7 +156,36 @@ Evaluate for `Retina_RESC`:
 python test_zero.py --obj Retina_RESC
 ```
 
-## Visualize
+## Results
+
+Localization `pAUC` results on the three target datasets:
+
+| Target | layer12 only | layer24 only | 12+24 equal fusion | 12+24 learned fusion |
+| --- | ---: | ---: | ---: | ---: |
+| Brain | 0.9342 | 0.9229 | 0.9378 | 0.9378 |
+| Liver | 0.9743 | 0.9773 | 0.9882 | 0.9882 |
+| Retina_RESC | 0.8769 | 0.8349 | 0.8938 | 0.8935 |
+| Average | 0.9285 | 0.9117 | 0.9399 | 0.9398 |
+
+These numbers summarize the localization-only ablation over different CLIP feature fusion settings, with `12+24 equal fusion` giving the best average `pAUC`.
+
+## Visualization
+
+Representative localization results for each target dataset:
+
+### Brain
+
+![Brain localization visualization](images/brain_localization_visualize.png)
+
+### Liver
+
+![Liver localization visualization](images/liver_localization_visualize.png)
+
+### Retina RESC
+
+![Retina RESC localization visualization](images/retina_resc_localization_visualize.png)
+
+## Generate Visualizations
 
 Generate a localization visualization panel for `Brain`:
 
