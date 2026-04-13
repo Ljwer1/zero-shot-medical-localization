@@ -124,6 +124,8 @@ Train the localization-only model for `Brain`:
 python train_zero.py --obj Brain
 ```
 
+By default training uses `--prompt_mode upstream`, which mirrors the prompt ensemble style used in the upstream `MediaBrain-SJTU/MVFA-AD` repository.
+
 Train for `Liver`:
 
 ```bash
@@ -143,6 +145,8 @@ Evaluate the saved checkpoint for `Brain`:
 ```bash
 python test_zero.py --obj Brain
 ```
+
+Evaluation defaults to `--prompt_mode auto`: if the checkpoint stores `prompt_mode=upstream` it reuses that mode, otherwise it falls back to `upstream`.
 
 Evaluate for `Liver`:
 
@@ -221,6 +225,7 @@ Useful options:
 - `--start_index`: skip the first abnormal samples and start later in the sorted test list
 - `--threshold`: threshold for turning the heatmap into a binary `Result`
 - `--display_size`: output tile size for each panel cell
+- `--prompt_mode`: choose `upstream`; evaluation scripts also support `auto`
 - `--samples_per_class`: number of normal and abnormal samples used in the t-SNE figure
 - `--selection_mode`: `random` for unbiased balanced sampling, `confidence` for a clearer representative subset
 - `--feature_mode`: `patch` for mean-pooled adapter patch tokens, `pooled` for final global image features
@@ -238,6 +243,9 @@ The visualization script renders four rows per sample:
 - This code path no longer includes the original image-level anomaly detection branch.
 - The active metric is pixel-level localization `pAUC`.
 - The adapter configuration is fixed to `spatial_text_guided` with layers `[12, 24]`.
+- Image inputs are normalized with CLIP `image_mean/image_std`.
+- Prompt modes:
+- `upstream` matches the prompt ensemble used by the upstream repository, including the `REAL_NAME` mapping for classes such as `Retina_RESC -> retinal OCT`.
 
 ## Citation
 

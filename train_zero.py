@@ -11,9 +11,15 @@ from tqdm import tqdm
 
 from CLIP.clip import create_model
 from CLIP.localization_adapter import LocalizationCLIP
-from dataset.medical_localization import LOCALIZATION_CLASS_NAMES, LocalizationEvalDataset, LocalizationSourceTrainDataset
+from dataset.medical_localization import (
+    LOCALIZATION_CLASS_NAMES,
+    LocalizationEvalDataset,
+    LocalizationSourceTrainDataset,
+    resolve_clip_image_stats,
+)
 from loss import BinaryDiceLoss, FocalLoss
-from utils import encode_text_with_prompt_ensemble, fuse_layer_outputs
+from prompt import PROMPT_MODES
+from utils import encode_text_with_prompt_ensemble, fuse_layer_outputs, resolve_prompt_mode
 
 
 use_cuda = torch.cuda.is_available()
@@ -56,11 +62,17 @@ def log_model_weights(model):
         )
 
 
-def build_text_feature_dict(clip_model):
+def build_text_feature_dict(clip_model, prompt_mode):
+    prompt_mode = resolve_prompt_mode(prompt_mode)
     text_feature_dict = {}
     with torch.no_grad(), torch.cuda.amp.autocast(enabled=use_cuda):
         for class_name in LOCALIZATION_CLASS_NAMES:
-            text_feature_dict[class_name] = encode_text_with_prompt_ensemble(clip_model, class_name, device)
+            text_feature_dict[class_name] = encode_text_with_prompt_ensemble(
+                clip_model,
+                class_name,
+                device,
+                prompt_mode=prompt_mode,
+            )
     return text_feature_dict
 
 
@@ -124,6 +136,7 @@ def main():
     parser.add_argument("--seg_fusion_reg_weight", type=float, default=0.01)
     parser.add_argument("--learn_residual_weights", type=int, default=0)
     parser.add_argument("--log_weights", type=int, default=1)
+    parser.add_argument("--prompt_mode", type=str, default="upstream", choices=PROMPT_MODES)
     parser.add_argument("--seed", type=int, default=111)
     args = parser.parse_args()
 
@@ -140,6 +153,7 @@ def main():
         require_pretrained=True,
     )
     clip_model.eval()
+    image_mean, image_std = resolve_clip_image_stats(clip_model)
 
     model = LocalizationCLIP(clip_model=clip_model, features=ADAPTER_LAYERS).to(device)
     model.eval()
@@ -165,6 +179,8 @@ def main():
         target_class=args.obj,
         resize=args.img_size,
         split="valid",
+        image_mean=image_mean,
+        image_std=image_std,
     )
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, **kwargs)
 
@@ -173,16 +189,21 @@ def main():
         class_name=args.obj,
         resize=args.img_size,
         split="valid",
+        image_mean=image_mean,
+        image_std=image_std,
     )
     valid_loader = DataLoader(valid_dataset, batch_size=1, shuffle=False, **kwargs)
 
     loss_focal = FocalLoss()
     loss_dice = BinaryDiceLoss()
-    text_feature_dict = build_text_feature_dict(clip_model)
+    effective_prompt_mode = resolve_prompt_mode(args.prompt_mode)
+    text_feature_dict = build_text_feature_dict(clip_model, effective_prompt_mode)
 
     print("task mode: localization-only")
     print("adapter: spatial_text_guided")
     print(f"adapter layers: {ADAPTER_LAYERS}")
+    print("input normalization: enabled (CLIP mean/std)")
+    print(f"prompt mode: {effective_prompt_mode}")
     print(f"target class: {args.obj}")
     print(f"source classes: {[name for name in LOCALIZATION_CLASS_NAMES if name != args.obj]}")
 
@@ -237,6 +258,7 @@ def main():
             checkpoint = model.localization_state_dict()
             checkpoint["best_valid_score"] = float(best_score)
             checkpoint["best_epoch"] = int(best_epoch)
+            checkpoint["prompt_mode"] = effective_prompt_mode
             torch.save(checkpoint, checkpoint_path)
             print(f"best checkpoint saved to {checkpoint_path}")
             print(f"best valid pAUC so far: {best_score:.4f} at epoch {best_epoch}")

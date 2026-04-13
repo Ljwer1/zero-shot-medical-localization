@@ -14,9 +14,10 @@ from torch.utils.data import DataLoader, Subset
 
 from CLIP.clip import create_model
 from CLIP.localization_adapter import LocalizationCLIP
-from dataset.medical_localization import LOCALIZATION_CLASS_NAMES, LocalizationEvalDataset
+from dataset.medical_localization import LOCALIZATION_CLASS_NAMES, LocalizationEvalDataset, resolve_clip_image_stats
+from prompt import PROMPT_MODES
 from train_zero import ADAPTER_LAYERS, build_layer_probability_map, get_checkpoint_path, setup_seed
-from utils import encode_text_with_prompt_ensemble, fuse_layer_outputs
+from utils import encode_text_with_prompt_ensemble, fuse_layer_outputs, resolve_prompt_mode
 
 
 use_cuda = torch.cuda.is_available()
@@ -45,6 +46,7 @@ def parse_args():
     parser.add_argument("--tsne_iterations", type=int, default=1000)
     parser.add_argument("--pca_dim", type=int, default=50)
     parser.add_argument("--point_radius", type=int, default=4)
+    parser.add_argument("--prompt_mode", type=str, default="auto", choices=["auto", *PROMPT_MODES])
     parser.add_argument("--output", type=str, default="./images/brain_tsne_comparison.png")
     parser.add_argument("--seed", type=int, default=111)
     return parser.parse_args()
@@ -334,13 +336,6 @@ def main():
     args = parse_args()
     setup_seed(args.seed)
 
-    dataset = LocalizationEvalDataset(
-        dataset_path=args.data_path,
-        class_name=args.obj,
-        resize=args.img_size,
-        split=args.split,
-    )
-
     clip_model = create_model(
         model_name=args.model_name,
         img_size=args.img_size,
@@ -349,6 +344,16 @@ def main():
         require_pretrained=True,
     )
     clip_model.eval()
+    image_mean, image_std = resolve_clip_image_stats(clip_model)
+
+    dataset = LocalizationEvalDataset(
+        dataset_path=args.data_path,
+        class_name=args.obj,
+        resize=args.img_size,
+        split=args.split,
+        image_mean=image_mean,
+        image_std=image_std,
+    )
 
     model = LocalizationCLIP(clip_model=clip_model, features=ADAPTER_LAYERS).to(device)
     model.eval()
@@ -360,9 +365,23 @@ def main():
     )
     checkpoint = torch.load(checkpoint_path, map_location=device)
     model.load_localization_state_dict(checkpoint)
+    effective_prompt_mode = resolve_prompt_mode(args.prompt_mode, checkpoint=checkpoint)
+    checkpoint_prompt_mode = checkpoint.get("prompt_mode") if isinstance(checkpoint, dict) else None
 
     with torch.no_grad(), torch.cuda.amp.autocast(enabled=use_cuda):
-        text_features = encode_text_with_prompt_ensemble(clip_model, args.obj, device)
+        text_features = encode_text_with_prompt_ensemble(
+            clip_model,
+            args.obj,
+            device,
+            prompt_mode=effective_prompt_mode,
+        )
+
+    if args.prompt_mode == "auto" and checkpoint_prompt_mode in PROMPT_MODES:
+        print(f"prompt mode: auto -> {effective_prompt_mode} (from checkpoint)")
+    elif args.prompt_mode == "auto":
+        print(f"prompt mode: auto -> {effective_prompt_mode} (default)")
+    else:
+        print(f"prompt mode: {effective_prompt_mode}")
 
     if args.selection_mode == "confidence":
         selection_loader = DataLoader(

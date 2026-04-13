@@ -1,102 +1,73 @@
-MEDICAL_PROMPT_TEMPLATES = [
-    "{}.",
-    "a medical image of {}.",
-    "a clinical image of {}.",
-    "a diagnostic image showing {}.",
-    "an image showing {}.",
-    "the image shows {}.",
-    "this is {}.",
-    "a detailed medical image of {}.",
+PROMPT_MODES = ("upstream",)
+
+
+PROMPT_NORMAL = [
+    "{}",
+    "flawless {}",
+    "perfect {}",
+    "unblemished {}",
+    "{} without flaw",
+    "{} without defect",
+    "{} without damage",
 ]
 
 
-PROMPT_METADATA = {
-    "Brain": {
-        "subjects": [
-            "a brain MRI scan",
-            "a brain MRI image",
-            "a brain FLAIR MRI scan",
-        ],
-        "normal": [
-            "{} with normal brain anatomy",
-            "{} without visible intracranial lesion",
-            "{} with preserved brain structure",
-            "{} with no focal brain abnormality",
-            "{} with no abnormal signal change",
-        ],
-        "abnormal": [
-            "{} with a visible brain lesion",
-            "{} with abnormal intracranial finding",
-            "{} with abnormal signal intensity",
-            "{} with focal brain abnormality",
-            "{} with structural distortion in brain tissue",
-        ],
-    },
-    "Liver": {
-        "subjects": [
-            "a liver CT scan",
-            "a liver CT image",
-            "an abdominal CT image of the liver",
-        ],
-        "normal": [
-            "{} with normal liver parenchyma",
-            "{} without focal hepatic lesion",
-            "{} with homogeneous liver appearance",
-            "{} with preserved liver contour",
-            "{} with no visible liver abnormality",
-        ],
-        "abnormal": [
-            "{} with a focal liver lesion",
-            "{} with abnormal liver parenchyma",
-            "{} with hepatic structural irregularity",
-            "{} with suspicious hepatic finding",
-            "{} with visible liver abnormality",
-        ],
-    },
-    "Retina_RESC": {
-        "subjects": [
-            "a retinal OCT image",
-            "a retinal OCT scan",
-            "an optical coherence tomography image of the retina",
-        ],
-        "normal": [
-            "{} with normal retinal layers",
-            "{} without retinal fluid or lesion",
-            "{} with preserved retinal structure",
-            "{} with regular retinal morphology",
-            "{} with no visible retinal abnormality",
-        ],
-        "abnormal": [
-            "{} with abnormal retinal layers",
-            "{} with retinal fluid or lesion",
-            "{} with structural irregularity in the retina",
-            "{} with visible retinal abnormality",
-            "{} with distorted retinal morphology",
-        ],
-    },
+PROMPT_ABNORMAL = [
+    "damaged {}",
+    "broken {}",
+    "{} with flaw",
+    "{} with defect",
+    "{} with damage",
+]
+
+
+PROMPT_STATE = [PROMPT_NORMAL, PROMPT_ABNORMAL]
+
+
+PROMPT_TEMPLATES = [
+    "a bad photo of a {}.",
+    "a low resolution photo of the {}.",
+    "a bad photo of the {}.",
+    "a cropped photo of the {}.",
+    "a bright photo of a {}.",
+    "a dark photo of the {}.",
+    "a photo of my {}.",
+    "a photo of the cool {}.",
+    "a close-up photo of a {}.",
+    "a black and white photo of the {}.",
+    "a bright photo of the {}.",
+    "a cropped photo of a {}.",
+    "a jpeg corrupted photo of a {}.",
+    "a blurry photo of the {}.",
+    "a photo of the {}.",
+    "a good photo of the {}.",
+    "a photo of one {}.",
+    "a close-up photo of the {}.",
+    "a photo of a {}.",
+    "a low resolution photo of a {}.",
+    "a photo of a large {}.",
+    "a blurry photo of a {}.",
+    "a jpeg corrupted photo of the {}.",
+    "a good photo of a {}.",
+    "a photo of the small {}.",
+    "a photo of the large {}.",
+    "a black and white photo of a {}.",
+    "a dark photo of a {}.",
+    "a photo of a cool {}.",
+    "a photo of a small {}.",
+    "there is a {} in the scene.",
+    "there is the {} in the scene.",
+    "this is a {} in the scene.",
+    "this is the {} in the scene.",
+    "this is one {} in the scene.",
+]
+
+
+REAL_NAME = {
+    "Brain": "Brain",
+    "Liver": "Liver",
+    "Retina_RESC": "retinal OCT",
+    "Chest": "Chest X-ray film",
+    "Retina_OCT2017": "retinal OCT",
+    "Histopathology": "histopathological image",
 }
-
-
-GENERIC_SUBJECTS = [
-    "a medical image",
-    "a diagnostic image",
-    "a clinical image",
-]
-
-
-GENERIC_NORMAL_STATES = [
-    "{} with normal appearance",
-    "{} without visible abnormality",
-    "{} with no abnormal finding",
-    "{} with preserved structure",
-    "{} showing no focal lesion",
-]
-
-
-GENERIC_ABNORMAL_STATES = [
-    "{} with abnormal appearance",
-    "{} with visible lesion",
-    "{} with suspicious abnormal finding",
-    "{} with structural irregularity",
-    "{} with focal abnormality",
-]

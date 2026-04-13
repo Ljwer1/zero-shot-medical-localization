@@ -4,12 +4,13 @@ import os
 import numpy as np
 import torch
 from PIL import Image
-from torchvision import transforms
 
 from CLIP.clip import create_model
 from CLIP.localization_adapter import LocalizationCLIP
+from dataset.medical_localization import build_image_transform, resolve_clip_image_stats
+from prompt import PROMPT_MODES
 from train_zero import ADAPTER_LAYERS, setup_seed
-from utils import encode_text_with_prompt_ensemble
+from utils import encode_text_with_prompt_ensemble, resolve_prompt_mode
 from visualize_zero import (
     build_prediction_mask,
     build_sample_panel,
@@ -60,6 +61,7 @@ def parse_args():
     parser.add_argument("--closing_kernel_size", type=int, default=5)
     parser.add_argument("--opening_kernel_size", type=int, default=3)
     parser.add_argument("--min_prediction_area", type=int, default=0)
+    parser.add_argument("--prompt_mode", type=str, default="auto", choices=["auto", *PROMPT_MODES])
     parser.add_argument("--output", type=str, default="./images/localization_topk.png")
     parser.add_argument("--seed", type=int, default=111)
     return parser.parse_args()
@@ -69,13 +71,6 @@ def main():
     args = parse_args()
     setup_seed(args.seed)
 
-    image_transform = transforms.Compose(
-        [
-            transforms.Resize((args.img_size, args.img_size), Image.BICUBIC),
-            transforms.ToTensor(),
-        ]
-    )
-
     clip_model = create_model(
         model_name=args.model_name,
         img_size=args.img_size,
@@ -84,15 +79,32 @@ def main():
         require_pretrained=True,
     )
     clip_model.eval()
+    image_mean, image_std = resolve_clip_image_stats(clip_model)
+    image_transform = build_image_transform(args.img_size, image_mean=image_mean, image_std=image_std)
+    print("input normalization: enabled (CLIP mean/std)")
 
     model = LocalizationCLIP(clip_model=clip_model, features=ADAPTER_LAYERS).to(device)
     model.eval()
     checkpoint_path = get_checkpoint_path(args.checkpoint_dir, args.obj)
     checkpoint = torch.load(checkpoint_path, map_location=device)
     model.load_localization_state_dict(checkpoint)
+    effective_prompt_mode = resolve_prompt_mode(args.prompt_mode, checkpoint=checkpoint)
+    checkpoint_prompt_mode = checkpoint.get("prompt_mode") if isinstance(checkpoint, dict) else None
 
     with torch.no_grad(), torch.cuda.amp.autocast(enabled=use_cuda):
-        text_features = encode_text_with_prompt_ensemble(clip_model, args.obj, device)
+        text_features = encode_text_with_prompt_ensemble(
+            clip_model,
+            args.obj,
+            device,
+            prompt_mode=effective_prompt_mode,
+        )
+
+    if args.prompt_mode == "auto" and checkpoint_prompt_mode in PROMPT_MODES:
+        print(f"prompt mode: auto -> {effective_prompt_mode} (from checkpoint)")
+    elif args.prompt_mode == "auto":
+        print(f"prompt mode: auto -> {effective_prompt_mode} (default)")
+    else:
+        print(f"prompt mode: {effective_prompt_mode}")
 
     image_dir = os.path.join(args.data_path, f"{args.obj}_AD", args.split, "Ungood", "img")
     image_names = sorted(os.listdir(image_dir))
