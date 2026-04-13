@@ -6,10 +6,11 @@ from torch.utils.data import DataLoader
 
 from CLIP.clip import create_model
 from CLIP.localization_adapter import LocalizationCLIP
-from dataset.medical_localization import LOCALIZATION_CLASS_NAMES, LocalizationEvalDataset
+from dataset.medical_localization import LOCALIZATION_CLASS_NAMES, LocalizationEvalDataset, resolve_clip_image_stats
+from prompt import PROMPT_MODES
 from test_zero import evaluate
 from train_zero import ADAPTER_LAYERS, setup_seed
-from utils import encode_text_with_prompt_ensemble
+from utils import encode_text_with_prompt_ensemble, resolve_prompt_mode
 
 
 use_cuda = torch.cuda.is_available()
@@ -48,6 +49,7 @@ def parse_args():
     parser.add_argument("--split", type=str, default="test", choices=["valid", "test"])
     parser.add_argument("--num_workers", type=int, default=0)
     parser.add_argument("--output_md", type=str, default="")
+    parser.add_argument("--prompt_mode", type=str, default="auto", choices=["auto", *PROMPT_MODES])
     parser.add_argument("--seed", type=int, default=111)
     return parser.parse_args()
 
@@ -71,6 +73,7 @@ def main():
         require_pretrained=True,
     )
     clip_model.eval()
+    image_mean, image_std = resolve_clip_image_stats(clip_model)
 
     headers = ["Target"] + [setting[0] for setting in ABLATION_SETTINGS]
     rows = []
@@ -84,17 +87,33 @@ def main():
 
         checkpoint = torch.load(get_checkpoint_path(args.save_path, class_name), map_location=device)
         model.load_localization_state_dict(checkpoint)
+        effective_prompt_mode = resolve_prompt_mode(args.prompt_mode, checkpoint=checkpoint)
+        checkpoint_prompt_mode = checkpoint.get("prompt_mode") if isinstance(checkpoint, dict) else None
 
         dataset = LocalizationEvalDataset(
             dataset_path=args.data_path,
             class_name=class_name,
             resize=args.img_size,
             split=args.split,
+            image_mean=image_mean,
+            image_std=image_std,
         )
         data_loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False, **kwargs)
 
         with torch.no_grad(), torch.cuda.amp.autocast(enabled=use_cuda):
-            text_features = encode_text_with_prompt_ensemble(clip_model, class_name, device)
+            text_features = encode_text_with_prompt_ensemble(
+                clip_model,
+                class_name,
+                device,
+                prompt_mode=effective_prompt_mode,
+            )
+
+        if args.prompt_mode == "auto" and checkpoint_prompt_mode in PROMPT_MODES:
+            print(f"prompt mode: auto -> {effective_prompt_mode} (from checkpoint)")
+        elif args.prompt_mode == "auto":
+            print(f"prompt mode: auto -> {effective_prompt_mode} (default)")
+        else:
+            print(f"prompt mode: {effective_prompt_mode}")
 
         row = [class_name]
         for _, fusion_mode, selected_layer in ABLATION_SETTINGS:
