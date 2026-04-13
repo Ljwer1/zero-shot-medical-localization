@@ -1,0 +1,191 @@
+# Localization-Only Medical Anomaly Detection
+
+This repository contains a localization-focused derivative of `MVFA-AD` for three target datasets: `Brain`, `Liver`, and `Retina_RESC`.
+
+Current scope:
+
+- task: localization only
+- backbone: frozen CLIP ViT-L/14@336
+- branch design: single segmentation branch
+- adapter layers: `[12, 24]`
+- adapter type: `spatial_text_guided`
+
+## Upstream Origin
+
+This codebase is derived from the original `MVFA-AD` project from `MediaBrain-SJTU` and keeps the upstream MIT license in [LICENSE](LICENSE). The repository has been simplified around a single localization-only training and evaluation path.
+
+- Original repository: https://github.com/MediaBrain-SJTU/MVFA-AD
+- Original paper: https://arxiv.org/abs/2403.12570
+
+## Get Started
+
+### Environment
+
+- python >= 3.8
+- pytorch >= 1.10
+- torchvision
+- numpy
+- scikit-learn
+- pillow
+- tqdm
+- ftfy
+- regex
+
+### Pretrained Weights
+
+- CLIP ViT-L/14@336:
+  https://openaipublic.azureedge.net/clip/models/3035c92b350959924f9f00213499208652fc7ea050643e8b385c2dac08641f02/ViT-L-14-336px.pt
+
+Download the CLIP checkpoint and place it under `CLIP/ckpt/`:
+
+```text
+CLIP/ckpt/ViT-L-14-336px.pt
+```
+
+Localization checkpoints produced by this repository are stored under `ckpt/localization/`. Local checkpoints are intentionally ignored by Git and should be managed outside the repository history.
+
+### Data Preparation
+
+This repository follows the same setup idea as the original `MVFA-AD` `Get Started` section: download or prepare the benchmark separately, then place the extracted folders under `data/`.
+
+- Optional benchmark access workflow: https://github.com/DorisBao/BMAD
+- Pre-processed benchmark links referenced by the original `MVFA-AD` README:
+  - Brain: https://drive.google.com/file/d/1YxcjcQqsPdkDO0rqIVHR5IJbqS9EIyoK/view?usp=sharing
+  - Liver: https://drive.google.com/file/d/1xriF0uiwrgoPh01N6GlzE5zPi_OIJG1I/view?usp=sharing
+  - RESC: https://drive.google.com/file/d/1BqDbK-7OP5fUha5zvS2XIQl-_t8jhTpX/view?usp=sharing
+
+After downloading, place the extracted datasets under `data/`:
+
+```text
+data/
+|- Brain_AD/
+|  |- valid/
+|  `- test/
+|- Liver_AD/
+|  |- valid/
+|  `- test/
+`- Retina_RESC_AD/
+   |- valid/
+   `- test/
+```
+
+See [data/README.md](data/README.md) for the dataset-specific notes.
+
+Active data protocol:
+
+- source training split: `valid`
+- target validation split during training: `valid`
+- target final evaluation split: `test`
+
+### File Layout
+
+```text
+MVFA-AD/
+|- CLIP/
+|  |- ckpt/
+|  |  `- ViT-L-14-336px.pt
+|  |- clip.py
+|  |- localization_adapter.py
+|  |- model.py
+|  |- model_configs/
+|  |- openai.py
+|  `- tokenizer.py
+|- ckpt/
+|  |- __init__.py
+|  `- localization/
+|- data/
+|  |- Brain_AD/
+|  |- Liver_AD/
+|  `- Retina_RESC_AD/
+|- dataset/
+|  `- medical_localization.py
+|- prompt.py
+|- test_zero.py
+|- train_zero.py
+|- utils.py
+`- visualize_zero.py
+```
+
+## Key Files
+
+- `train_zero.py`: localization-only training entrypoint
+- `test_zero.py`: localization-only evaluation entrypoint
+- `visualize_zero.py`: qualitative visualization entrypoint
+- `CLIP/localization_adapter.py`: single-branch two-layer spatial text-guided adapter
+- `dataset/medical_localization.py`: localization-only source and target datasets
+- `prompt.py`: prompt ensemble definitions
+- `utils.py`: text encoding and layer fusion helpers
+
+## Train
+
+Train the localization-only model for `Brain`:
+
+```bash
+python train_zero.py --obj Brain
+```
+
+Train for `Liver`:
+
+```bash
+python train_zero.py --obj Liver
+```
+
+Train for `Retina_RESC`:
+
+```bash
+python train_zero.py --obj Retina_RESC
+```
+
+## Test
+
+Evaluate the saved checkpoint for `Brain`:
+
+```bash
+python test_zero.py --obj Brain
+```
+
+Evaluate for `Liver`:
+
+```bash
+python test_zero.py --obj Liver
+```
+
+Evaluate for `Retina_RESC`:
+
+```bash
+python test_zero.py --obj Retina_RESC
+```
+
+## Visualize
+
+Generate a localization visualization panel for `Brain`:
+
+```bash
+python visualize_zero.py --obj Brain --num_samples 3 --output ./images/brain_localization_visualize.png
+```
+
+Generate a multi-dataset panel after training all required targets:
+
+```bash
+python visualize_zero.py --obj Brain Liver Retina_RESC --num_samples 3 --output ./images/localization_visualize.png
+```
+
+Useful options:
+
+- `--start_index`: skip the first abnormal samples and start later in the sorted test list
+- `--threshold`: threshold for turning the heatmap into a binary `Result`
+- `--display_size`: output tile size for each panel cell
+
+The visualization script renders four rows per sample:
+
+- original image
+- heatmap overlay
+- thresholded prediction mask
+- ground-truth anomaly mask
+
+## Notes
+
+- Local datasets, pretrained weights, checkpoints, and cache files are ignored by Git for easier publishing.
+- This code path no longer includes the original image-level anomaly detection branch.
+- The active metric is pixel-level localization `pAUC`.
+- The adapter configuration is fixed to `spatial_text_guided` with layers `[12, 24]`.

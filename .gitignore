@@ -1,0 +1,18 @@
+# Python cache files
+__pycache__/
+*.py[cod]
+
+# Local datasets
+data/*
+!data/README.md
+!data/__init__.py
+
+# Downloaded pretrained weights and local checkpoints
+CLIP/ckpt/*
+!CLIP/ckpt/.gitkeep
+ckpt/localization/*
+!ckpt/localization/.gitkeep
+
+# Local experiment artifacts
+.pytest_cache/
+.mypy_cache/
