@@ -5,7 +5,9 @@ from typing import List, Sequence, Tuple
 
 import numpy as np
 import torch
-from PIL import Image, ImageDraw, ImageFont
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 from torch.utils.data import DataLoader, Subset
@@ -22,15 +24,6 @@ device = torch.device("cuda:0" if use_cuda else "cpu")
 
 NORMAL_LABEL = 0
 ABNORMAL_LABEL = 1
-
-
-def load_font(size: int) -> ImageFont.ImageFont:
-    for font_name in ["arial.ttf", "Arial.ttf", "DejaVuSans.ttf"]:
-        try:
-            return ImageFont.truetype(font_name, size=size)
-        except OSError:
-            continue
-    return ImageFont.load_default()
 
 
 def parse_args():
@@ -213,74 +206,27 @@ def run_tsne(features: np.ndarray, args) -> Tuple[np.ndarray, float]:
     return embedding, used_perplexity
 
 
-def draw_legend(draw: ImageDraw.ImageDraw, x: int, y: int, font: ImageFont.ImageFont, point_radius: int):
-    legend_items = [
-        ("Normal", (59, 130, 189)),
-        ("Abnormal", (244, 127, 50)),
-    ]
-    row_height = 32
-    for index, (label, color) in enumerate(legend_items):
-        cy = y + index * row_height + row_height // 2
-        draw.ellipse(
-            (x, cy - point_radius, x + point_radius * 2, cy + point_radius),
-            fill=color,
-            outline=color,
-        )
-        draw.text((x + point_radius * 2 + 12, y + index * row_height), label, fill="black", font=font)
+def dataset_display_name(obj: str) -> str:
+    mapping = {
+        "Brain": "Brain MRI",
+        "Liver": "Liver CT",
+        "Retina_RESC": "Retinal OCT",
+    }
+    return mapping.get(obj, obj)
 
 
-def project_points(points: np.ndarray, left: int, top: int, width: int, height: int, padding: int):
+def panel_limits(points: np.ndarray, padding_ratio: float = 0.08):
     min_xy = points.min(axis=0)
     max_xy = points.max(axis=0)
-    span = np.maximum(max_xy - min_xy, 1e-6)
-    normalized = (points - min_xy) / span
-
-    x_coords = left + padding + normalized[:, 0] * (width - 2 * padding)
-    y_coords = top + height - padding - normalized[:, 1] * (height - 2 * padding)
-    return np.stack([x_coords, y_coords], axis=1)
-
-
-def draw_panel(
-    draw: ImageDraw.ImageDraw,
-    points: np.ndarray,
-    labels: np.ndarray,
-    panel_box: Tuple[int, int, int, int],
-    title: str,
-    subtitle: str,
-    font_title: ImageFont.ImageFont,
-    font_label: ImageFont.ImageFont,
-    point_radius: int,
-    show_legend: bool,
-):
-    left, top, right, bottom = panel_box
-    width = right - left
-    height = bottom - top
-
-    draw.rectangle(panel_box, outline=(60, 60, 60), width=2)
-    draw.text((left + width // 2, top - 34), title, anchor="mm", fill="black", font=font_title)
-
-    projected = project_points(points, left, top, width, height, padding=26)
-    colors = {
-        NORMAL_LABEL: (59, 130, 189),
-        ABNORMAL_LABEL: (244, 127, 50),
-    }
-
-    for (x_coord, y_coord), label in zip(projected, labels):
-        color = colors[int(label)]
-        draw.ellipse(
-            (
-                x_coord - point_radius,
-                y_coord - point_radius,
-                x_coord + point_radius,
-                y_coord + point_radius,
-            ),
-            fill=color,
-            outline=color,
-        )
-
-    draw.text((left + width // 2, bottom + 26), subtitle, anchor="mm", fill="black", font=font_label)
-    if show_legend:
-        draw_legend(draw, right - 132, top + 16, font_label, point_radius)
+    center = (min_xy + max_xy) / 2.0
+    span = max(max_xy[0] - min_xy[0], max_xy[1] - min_xy[1], 1e-6)
+    half = span * (0.5 + padding_ratio)
+    return (
+        center[0] - half,
+        center[0] + half,
+        center[1] - half,
+        center[1] + half,
+    )
 
 
 def create_comparison_figure(
@@ -294,82 +240,100 @@ def create_comparison_figure(
     adapter_perplexity: float,
     selection_mode: str,
 ):
-    canvas_width = 1320
-    canvas_height = 760
-    image = Image.new("RGB", (canvas_width, canvas_height), "white")
-    draw = ImageDraw.Draw(image)
-
-    font_header = load_font(34)
-    font_title = load_font(26)
-    font_text = load_font(20)
-    font_small = load_font(18)
-
-    draw.text(
-        (canvas_width // 2, 48),
-        f"{args.obj} {args.split.capitalize()} Feature t-SNE",
-        anchor="mm",
-        fill="black",
-        font=font_header,
-    )
-    draw.text(
-        (canvas_width // 2, 90),
-        "Normal and abnormal samples are balanced before visualization.",
-        anchor="mm",
-        fill=(70, 70, 70),
-        font=font_small,
+    plt.rcParams.update(
+        {
+            "font.family": "DejaVu Serif",
+            "axes.edgecolor": "#444444",
+            "axes.linewidth": 0.9,
+        }
     )
 
-    panel_width = 500
-    panel_height = 470
-    gap = 80
-    left_panel = (120, 150, 120 + panel_width, 150 + panel_height)
-    right_panel = (120 + panel_width + gap, 150, 120 + panel_width + gap + panel_width, 150 + panel_height)
-
-    draw_panel(
-        draw=draw,
-        points=base_embedding,
-        labels=labels,
-        panel_box=left_panel,
-        title="Without Adapter",
-        subtitle="(a) Pretrained visual encoder features",
-        font_title=font_title,
-        font_label=font_text,
-        point_radius=args.point_radius,
-        show_legend=False,
-    )
-    draw_panel(
-        draw=draw,
-        points=adapter_embedding,
-        labels=labels,
-        panel_box=right_panel,
-        title="With Adapter",
-        subtitle="(b) Multi-level adapter features",
-        font_title=font_title,
-        font_label=font_text,
-        point_radius=args.point_radius,
-        show_legend=True,
-    )
-
-    footer_lines = [
-        (
-            f"{args.obj} {args.split} subset: {normal_count} normal + {abnormal_count} abnormal samples"
-        ),
-        (
-            f"t-SNE perplexity: base={base_perplexity:.1f}, adapter={adapter_perplexity:.1f} | "
-            f"adapter layers={ADAPTER_LAYERS} | selection={selection_mode}, features={args.feature_mode}"
-        ),
+    colors = {
+        NORMAL_LABEL: "#3b82bd",
+        ABNORMAL_LABEL: "#f47f32",
+    }
+    figure = plt.figure(figsize=(7.4, 5.2), dpi=200)
+    grid = figure.add_gridspec(2, 2, height_ratios=[14, 3], hspace=0.22, wspace=0.18)
+    axes = [
+        figure.add_subplot(grid[0, 0]),
+        figure.add_subplot(grid[0, 1]),
     ]
-    for line_index, line in enumerate(footer_lines):
-        draw.text(
-            (canvas_width // 2, 680 + line_index * 28),
-            line,
-            anchor="mm",
-            fill=(70, 70, 70),
-            font=font_small,
+    caption_axis = figure.add_subplot(grid[1, :])
+    caption_axis.axis("off")
+
+    panel_specs = [
+        (axes[0], base_embedding, "(a) Without Adapter", False),
+        (axes[1], adapter_embedding, "(b) With Adapter", True),
+    ]
+    marker_size = max(8, args.point_radius * 5)
+
+    for axis, points, subtitle, show_legend in panel_specs:
+        for label_value, label_name in [(NORMAL_LABEL, "Normal"), (ABNORMAL_LABEL, "Abnormal")]:
+            mask = labels == label_value
+            axis.scatter(
+                points[mask, 0],
+                points[mask, 1],
+                s=marker_size,
+                c=colors[label_value],
+                edgecolors="none",
+                label=label_name,
+            )
+
+        xmin, xmax, ymin, ymax = panel_limits(points)
+        axis.set_xlim(xmin, xmax)
+        axis.set_ylim(ymin, ymax)
+        axis.set_xticks([])
+        axis.set_yticks([])
+        axis.set_box_aspect(1)
+        axis.text(
+            0.5,
+            -0.11,
+            subtitle,
+            transform=axis.transAxes,
+            ha="center",
+            va="top",
+            fontsize=10,
         )
+        if show_legend:
+            legend = axis.legend(
+                loc="upper right",
+                frameon=True,
+                fancybox=False,
+                framealpha=1.0,
+                borderpad=0.4,
+                handlelength=0.8,
+                handletextpad=0.5,
+                fontsize=9,
+            )
+            legend.get_frame().set_edgecolor("#cccccc")
+            legend.get_frame().set_linewidth(0.7)
+
+    display_name = dataset_display_name(args.obj)
+    subset_desc = (
+        f"balanced {selection_mode}-selected {args.split} subset"
+        if selection_mode == "confidence"
+        else f"balanced random {args.split} subset"
+    )
+    caption = (
+        f"Figure. Visualization, using t-SNE, of the features learned from the {display_name} {args.split} set, "
+        f"using (a) pretrained visual encoder, and (b) multi-level feature adapters. "
+        f"The same t-SNE optimization settings are used in each case. "
+        f"The figure uses a {subset_desc} with {normal_count} normal and {abnormal_count} abnormal samples. "
+        f"Results show that features extracted by adapters are separated between normal and abnormal samples."
+    )
+    caption_axis.text(
+        0.0,
+        0.72,
+        caption,
+        ha="left",
+        va="top",
+        fontsize=9.2,
+        wrap=True,
+    )
 
     os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
-    image.save(args.output)
+    figure.savefig(args.output, bbox_inches="tight", facecolor="white")
+    plt.close(figure)
 
 
 def main():

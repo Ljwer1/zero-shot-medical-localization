@@ -190,11 +190,11 @@ Each panel shows the original image, heatmap, thresholded prediction mask, and g
 
 ## Feature Distribution
 
-Brain feature separation before and after applying the localization adapter:
+Liver feature separation before and after applying the localization adapter:
 
-![Brain feature t-SNE comparison](images/brain_tsne_comparison.png)
+![Liver feature t-SNE comparison](images/liver_tsne_paper.png)
 
-The figure uses a balanced, confidence-selected Brain test subset to highlight representative normal and abnormal samples. The left panel uses pretrained visual encoder features, while the right panel uses the adapted pooled features after multi-level localization adapters.
+The figure uses a balanced, confidence-selected Liver test subset to highlight representative normal and abnormal samples. The left panel uses pretrained visual encoder features, while the right panel uses the adapted pooled features after multi-level localization adapters. Among the current three targets, Liver shows the clearest normal/abnormal separation.
 
 ## Generate Visualizations
 
@@ -210,10 +210,10 @@ Generate a multi-dataset panel after training all required targets:
 python visualize_zero.py --obj Brain Liver Retina_RESC --num_samples 3 --output ./images/localization_visualize.png
 ```
 
-Generate the Brain t-SNE comparison figure:
+Generate the Liver t-SNE comparison figure:
 
 ```bash
-python tsne_zero.py --obj Brain --split test --selection_mode confidence --feature_mode pooled --samples_per_class 150 --perplexity 25 --output ./images/brain_tsne_comparison.png
+python tsne_zero.py --obj Liver --split test --selection_mode confidence --feature_mode pooled --samples_per_class 150 --perplexity 25 --output ./images/liver_tsne_paper.png
 ```
 
 Useful options:
