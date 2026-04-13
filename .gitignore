@@ -16,3 +16,4 @@ ckpt/localization/*
 # Local experiment artifacts
 .pytest_cache/
 .mypy_cache/
+images/*_smoke.png

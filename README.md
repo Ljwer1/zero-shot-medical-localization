@@ -188,6 +188,14 @@ Representative localization results for each target dataset:
 
 Each panel shows the original image, heatmap, thresholded prediction mask, and ground-truth anomaly mask for representative abnormal samples.
 
+## Feature Distribution
+
+Brain feature separation before and after applying the localization adapter:
+
+![Brain feature t-SNE comparison](images/brain_tsne_comparison.png)
+
+The left panel uses balanced Brain test samples encoded by the pretrained visual encoder only. The right panel uses the learned multi-level adapter features, which are expected to produce a clearer separation between normal and abnormal samples.
+
 ## Generate Visualizations
 
 Generate a localization visualization panel for `Brain`:
@@ -202,11 +210,18 @@ Generate a multi-dataset panel after training all required targets:
 python visualize_zero.py --obj Brain Liver Retina_RESC --num_samples 3 --output ./images/localization_visualize.png
 ```
 
+Generate the Brain t-SNE comparison figure:
+
+```bash
+python tsne_zero.py --obj Brain --split test --samples_per_class 300 --output ./images/brain_tsne_comparison.png
+```
+
 Useful options:
 
 - `--start_index`: skip the first abnormal samples and start later in the sorted test list
 - `--threshold`: threshold for turning the heatmap into a binary `Result`
 - `--display_size`: output tile size for each panel cell
+- `--samples_per_class`: number of normal and abnormal samples used in the t-SNE figure
 
 The visualization script renders four rows per sample:
 
