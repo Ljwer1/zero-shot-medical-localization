@@ -309,16 +309,10 @@ def create_comparison_figure(
             legend.get_frame().set_linewidth(0.7)
 
     display_name = dataset_display_name(args.obj)
-    subset_desc = (
-        f"balanced {selection_mode}-selected {args.split} subset"
-        if selection_mode == "confidence"
-        else f"balanced random {args.split} subset"
-    )
     caption = (
         f"Figure. Visualization, using t-SNE, of the features learned from the {display_name} {args.split} set, "
         f"using (a) pretrained visual encoder, and (b) multi-level feature adapters. "
         f"The same t-SNE optimization settings are used in each case. "
-        f"The figure uses a {subset_desc} with {normal_count} normal and {abnormal_count} abnormal samples. "
         f"Results show that features extracted by adapters are separated between normal and abnormal samples."
     )
     caption_axis.text(
