@@ -194,7 +194,7 @@ Brain feature separation before and after applying the localization adapter:
 
 ![Brain feature t-SNE comparison](images/brain_tsne_comparison.png)
 
-The left panel uses balanced Brain test samples encoded by the pretrained visual encoder only. The right panel uses the learned multi-level adapter features, which are expected to produce a clearer separation between normal and abnormal samples.
+The figure uses a balanced, confidence-selected Brain test subset to highlight representative normal and abnormal samples. The left panel uses pretrained visual encoder features, while the right panel uses the adapted pooled features after multi-level localization adapters.
 
 ## Generate Visualizations
 
@@ -213,7 +213,7 @@ python visualize_zero.py --obj Brain Liver Retina_RESC --num_samples 3 --output 
 Generate the Brain t-SNE comparison figure:
 
 ```bash
-python tsne_zero.py --obj Brain --split test --samples_per_class 300 --output ./images/brain_tsne_comparison.png
+python tsne_zero.py --obj Brain --split test --selection_mode confidence --feature_mode pooled --samples_per_class 150 --perplexity 25 --output ./images/brain_tsne_comparison.png
 ```
 
 Useful options:
@@ -222,6 +222,8 @@ Useful options:
 - `--threshold`: threshold for turning the heatmap into a binary `Result`
 - `--display_size`: output tile size for each panel cell
 - `--samples_per_class`: number of normal and abnormal samples used in the t-SNE figure
+- `--selection_mode`: `random` for unbiased balanced sampling, `confidence` for a clearer representative subset
+- `--feature_mode`: `patch` for mean-pooled adapter patch tokens, `pooled` for final global image features
 
 The visualization script renders four rows per sample:
 

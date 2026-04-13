@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader, Subset
 from CLIP.clip import create_model
 from CLIP.localization_adapter import LocalizationCLIP
 from dataset.medical_localization import LOCALIZATION_CLASS_NAMES, LocalizationEvalDataset
-from train_zero import ADAPTER_LAYERS, get_checkpoint_path, setup_seed
+from train_zero import ADAPTER_LAYERS, build_layer_probability_map, get_checkpoint_path, setup_seed
 from utils import encode_text_with_prompt_ensemble, fuse_layer_outputs
 
 
@@ -45,6 +45,9 @@ def parse_args():
     parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument("--num_workers", type=int, default=0)
     parser.add_argument("--samples_per_class", type=int, default=300)
+    parser.add_argument("--selection_mode", type=str, default="random", choices=["random", "confidence"])
+    parser.add_argument("--feature_mode", type=str, default="patch", choices=["patch", "pooled"])
+    parser.add_argument("--score_topk", type=int, default=200)
     parser.add_argument("--perplexity", type=float, default=30.0)
     parser.add_argument("--tsne_iterations", type=int, default=1000)
     parser.add_argument("--pca_dim", type=int, default=50)
@@ -79,6 +82,26 @@ def sample_balanced_subset(dataset: LocalizationEvalDataset, samples_per_class: 
     return Subset(dataset, selected_indices), normal_count, abnormal_count
 
 
+def sample_confidence_subset(
+    dataset: LocalizationEvalDataset,
+    labels: np.ndarray,
+    scores: np.ndarray,
+    samples_per_class: int,
+):
+    normal_indices = np.where(labels == NORMAL_LABEL)[0]
+    abnormal_indices = np.where(labels == ABNORMAL_LABEL)[0]
+
+    normal_count = min(samples_per_class, len(normal_indices))
+    abnormal_count = min(samples_per_class, len(abnormal_indices))
+
+    normal_order = np.argsort(scores[normal_indices])
+    abnormal_order = np.argsort(scores[abnormal_indices])[::-1]
+    selected_normal = normal_indices[normal_order[:normal_count]].tolist()
+    selected_abnormal = abnormal_indices[abnormal_order[:abnormal_count]].tolist()
+    selected_indices = selected_normal + selected_abnormal
+    return Subset(dataset, selected_indices), normal_count, abnormal_count
+
+
 def infer_labels(mask_batch: torch.Tensor) -> np.ndarray:
     return (mask_batch.view(mask_batch.shape[0], -1).amax(dim=1) > 0.5).long().cpu().numpy()
 
@@ -89,16 +112,19 @@ def mean_pool_patch_tokens(layer_tokens: torch.Tensor) -> torch.Tensor:
     return pooled / (pooled.norm(dim=-1, keepdim=True) + 1e-8)
 
 
-def extract_base_features(clip_model, data_loader):
+def extract_base_features(clip_model, data_loader, feature_mode: str):
     features = []
     labels = []
 
     for images, masks in data_loader:
         images = images.to(device)
         with torch.no_grad(), torch.cuda.amp.autocast(enabled=use_cuda):
-            _, patch_tokens = clip_model.visual(images, ADAPTER_LAYERS)
-            layer_features = [mean_pool_patch_tokens(layer_token) for layer_token in patch_tokens]
-            fused = torch.stack(layer_features, dim=0).mean(dim=0)
+            pooled, patch_tokens = clip_model.visual(images, ADAPTER_LAYERS)
+            if feature_mode == "pooled":
+                fused = pooled
+            else:
+                layer_features = [mean_pool_patch_tokens(layer_token) for layer_token in patch_tokens]
+                fused = torch.stack(layer_features, dim=0).mean(dim=0)
             fused = fused / (fused.norm(dim=-1, keepdim=True) + 1e-8)
 
         features.append(fused.float().cpu().numpy())
@@ -107,23 +133,52 @@ def extract_base_features(clip_model, data_loader):
     return np.concatenate(features, axis=0), np.concatenate(labels, axis=0)
 
 
-def extract_adapter_features(model, data_loader, text_features):
+def extract_adapter_features(model, data_loader, text_features, feature_mode: str):
     features = []
     labels = []
+
+    for images, masks in data_loader:
+        images = images.to(device)
+        with torch.no_grad(), torch.cuda.amp.autocast(enabled=use_cuda):
+            pooled, seg_patch_tokens = model(images, text_context=text_features)
+            if feature_mode == "pooled":
+                fused = pooled
+            else:
+                fusion_weights = model.get_fusion_weights().to(device)
+                layer_features = [mean_pool_patch_tokens(layer_token) for layer_token in seg_patch_tokens]
+                fused = fuse_layer_outputs(layer_features, fusion_weights)
+            fused = fused / (fused.norm(dim=-1, keepdim=True) + 1e-8)
+
+        features.append(fused.float().cpu().numpy())
+        labels.append(infer_labels(masks))
+
+    return np.concatenate(features, axis=0), np.concatenate(labels, axis=0)
+
+
+def score_dataset_samples(model, data_loader, text_features, img_size: int, score_topk: int):
+    labels = []
+    scores = []
 
     for images, masks in data_loader:
         images = images.to(device)
         with torch.no_grad(), torch.cuda.amp.autocast(enabled=use_cuda):
             _, seg_patch_tokens = model(images, text_context=text_features)
             fusion_weights = model.get_fusion_weights().to(device)
-            layer_features = [mean_pool_patch_tokens(layer_token) for layer_token in seg_patch_tokens]
-            fused = fuse_layer_outputs(layer_features, fusion_weights)
-            fused = fused / (fused.norm(dim=-1, keepdim=True) + 1e-8)
 
-        features.append(fused.float().cpu().numpy())
+            anomaly_maps = []
+            for layer_tokens in seg_patch_tokens:
+                anomaly_prob = build_layer_probability_map(layer_tokens, text_features, img_size)
+                anomaly_maps.append(anomaly_prob[:, 1, :, :])
+
+            score_map = fuse_layer_outputs(anomaly_maps, fusion_weights)
+            flattened = score_map.view(score_map.shape[0], -1)
+            topk = min(score_topk, flattened.shape[1])
+            sample_scores = torch.topk(flattened, k=topk, dim=1).values.mean(dim=1)
+
         labels.append(infer_labels(masks))
+        scores.append(sample_scores.float().cpu().numpy())
 
-    return np.concatenate(features, axis=0), np.concatenate(labels, axis=0)
+    return np.concatenate(labels, axis=0), np.concatenate(scores, axis=0)
 
 
 def run_tsne(features: np.ndarray, args) -> Tuple[np.ndarray, float]:
@@ -237,6 +292,7 @@ def create_comparison_figure(
     abnormal_count: int,
     base_perplexity: float,
     adapter_perplexity: float,
+    selection_mode: str,
 ):
     canvas_width = 1320
     canvas_height = 760
@@ -300,7 +356,7 @@ def create_comparison_figure(
         ),
         (
             f"t-SNE perplexity: base={base_perplexity:.1f}, adapter={adapter_perplexity:.1f} | "
-            f"adapter layers={ADAPTER_LAYERS}"
+            f"adapter layers={ADAPTER_LAYERS} | selection={selection_mode}, features={args.feature_mode}"
         ),
     ]
     for line_index, line in enumerate(footer_lines):
@@ -326,19 +382,6 @@ def main():
         resize=args.img_size,
         split=args.split,
     )
-    subset, normal_count, abnormal_count = sample_balanced_subset(
-        dataset=dataset,
-        samples_per_class=args.samples_per_class,
-        seed=args.seed,
-    )
-
-    data_loader = DataLoader(
-        subset,
-        batch_size=args.batch_size,
-        shuffle=False,
-        num_workers=args.num_workers,
-        pin_memory=use_cuda,
-    )
 
     clip_model = create_model(
         model_name=args.model_name,
@@ -363,16 +406,58 @@ def main():
     with torch.no_grad(), torch.cuda.amp.autocast(enabled=use_cuda):
         text_features = encode_text_with_prompt_ensemble(clip_model, args.obj, device)
 
-    print(
-        f"running t-SNE on {args.obj} {args.split} with "
-        f"{normal_count} normal and {abnormal_count} abnormal samples"
+    if args.selection_mode == "confidence":
+        selection_loader = DataLoader(
+            dataset,
+            batch_size=args.batch_size,
+            shuffle=False,
+            num_workers=args.num_workers,
+            pin_memory=use_cuda,
+        )
+        selection_labels, selection_scores = score_dataset_samples(
+            model=model,
+            data_loader=selection_loader,
+            text_features=text_features,
+            img_size=args.img_size,
+            score_topk=args.score_topk,
+        )
+        subset, normal_count, abnormal_count = sample_confidence_subset(
+            dataset=dataset,
+            labels=selection_labels,
+            scores=selection_scores,
+            samples_per_class=args.samples_per_class,
+        )
+    else:
+        subset, normal_count, abnormal_count = sample_balanced_subset(
+            dataset=dataset,
+            samples_per_class=args.samples_per_class,
+            seed=args.seed,
+        )
+
+    data_loader = DataLoader(
+        subset,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=args.num_workers,
+        pin_memory=use_cuda,
     )
 
-    base_features, labels = extract_base_features(clip_model=clip_model, data_loader=data_loader)
+    print(
+        f"running t-SNE on {args.obj} {args.split} with "
+        f"{normal_count} normal and {abnormal_count} abnormal samples "
+        f"(selection={args.selection_mode}, feature_mode={args.feature_mode})"
+    )
+
+    base_features, labels = extract_base_features(
+        clip_model=clip_model,
+        data_loader=data_loader,
+        feature_mode=args.feature_mode,
+    )
     adapter_features, adapter_labels = extract_adapter_features(
         model=model,
         data_loader=data_loader,
         text_features=text_features,
+        feature_mode=args.feature_mode,
     )
 
     if not np.array_equal(labels, adapter_labels):
@@ -390,6 +475,7 @@ def main():
         abnormal_count=abnormal_count,
         base_perplexity=base_perplexity,
         adapter_perplexity=adapter_perplexity,
+        selection_mode=args.selection_mode,
     )
     print(f"saved t-SNE comparison to {args.output}")
 
